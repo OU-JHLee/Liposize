@@ -37,34 +37,11 @@ This repository provides:
 
 ├─ schema.json # columns definition
 
-├─ grid_y1.json # hyperparameter grid override
-
-├─ sample_input.csv # example train data
-
-├─ unseen_sample.csv # example unseen data
+├─ grid.json # hyperparameter grid override
 
 └─ dist/
 
-├─ liposize_tool # CLI binary (PyInstaller onefile)
-
 └─ LipoSize.app # GUI app (PyInstaller windowed)
-
-
----
-
-## Train CSV
-
-- Must include the target columns (y1, y2) and the selected feature columns.
-  - Example columns:
-    - x1..x8 + y1 + y2
-
----
-
-## Unseen CSV
-
-- Must include at least the required feature columns for the selected models.
-   - Example columns:
-     - x1..x8 (targets optional)
 
 ---
 
