@@ -1,0 +1,113 @@
+import numpy as np
+import pandas as pd
+from sklearn.base import clone
+from sklearn.svm import LinearSVR
+from sklearn.preprocessing import StandardScaler
+from sklearn.pipeline import Pipeline
+from sklearn.model_selection import LeaveOneOut, GridSearchCV, cross_val_predict
+from sklearn.metrics import mean_squared_error, r2_score, make_scorer
+import warnings
+from sklearn.exceptions import ConvergenceWarning
+
+# 1) func
+def run_loocv_lsvr(X, y, param_grid, loo, target_name, output_dir):
+    # pipeline
+    base_pipe = Pipeline([
+        ("scaler", StandardScaler()),
+        ("lsvr", LinearSVR(random_state=0, max_iter=100000))
+    ])
+    # GridSearch
+    grid = GridSearchCV(
+        estimator=base_pipe,
+        param_grid=param_grid,
+        scoring={"RMSE": make_scorer(
+            lambda yt, yp: np.sqrt(mean_squared_error(yt, yp)),
+            greater_is_better=False
+        )},
+        refit="RMSE",
+        cv=loo,
+        return_train_score=False,
+        n_jobs=-1,
+        verbose=0
+    )
+    grid.fit(X, y)
+
+    # 2) DataFrame 
+    df = pd.DataFrame(grid.cv_results_)
+    # column: param_*, mean_test_RMSE, std_test_RMSE
+    param_cols = [c for c in df.columns if c.startswith("param_")]
+    df_out = df[param_cols + ["mean_test_RMSE", "std_test_RMSE"]].copy()
+    df_out["mean_RMSE"] = -df_out["mean_test_RMSE"]
+    df_out = df_out.drop(columns=["mean_test_RMSE"])
+    df_out = df_out.rename(columns={"std_test_RMSE":"std_RMSE"})
+
+    # 3) RMSE, R²
+    true_rmses, true_r2s = [], []
+    for _, row in df_out.iterrows():
+        # param_ 컬럼을 실제 pipe.set_params용 딕셔너리로 변환
+        params = {k.replace("param_",""): row[k] for k in param_cols}
+        model = clone(base_pipe).set_params(**params)
+        y_pred = cross_val_predict(model, X, y, cv=loo)
+        true_rmses.append(np.sqrt(mean_squared_error(y, y_pred)))
+        true_r2s.append(r2_score(y, y_pred))
+
+    df_out["true_RMSE"] = true_rmses
+    df_out["true_R2"]   = true_r2s
+
+    # 4) grid_results CSV 
+    df_out.to_csv(f"{output_dir}/grid_results_{target_name}.csv", index=False)
+
+    # 5) best params & summary 
+    best_params = grid.best_params_
+    #  LOOCV 
+    best_model = grid.best_estimator_
+    y_pred_all = cross_val_predict(best_model, X, y, cv=loo)
+    true_rmse = np.sqrt(mean_squared_error(y, y_pred_all))
+    true_r2   = r2_score(y, y_pred_all)
+
+    return best_params, true_rmse, true_r2, y_pred_all
+
+
+if __name__ == "__main__":
+    x1 = #data_pathway  # TFR
+    x2 = #data_pathway  # FRR
+    x3 = #data_pathway  # Conc
+    x4 = #data_pathway  # DOPC
+    x5 = #data_pathway  # Chol
+    x6 = #data_pathway  # ESM
+    x7 = #data_pathway  # GP340
+    x8 = #data_pathway  # rDPH
+    X = np.column_stack([x1,x2,x3,x4,x5,x6,x7])
+
+    y1 = np.array(#data_pathway)
+    y2 = np.array(#data_pathway)
+    targets = {"y1": y1, "y2": y2}
+
+    param_grid = {
+        "lsvr__C":       [0.01, 0.1, 1, 10, 100],
+        "lsvr__epsilon": [0.001, 0.01, 0.1, 1, 10],
+        "lsvr__tol":     [1e-2, 1e-3, 1e-4],
+        "lsvr__loss":    ["epsilon_insensitive", "squared_epsilon_insensitive"],
+        "lsvr__fit_intercept": [True, False]
+    }
+    loo = LeaveOneOut()
+    output_dir = "/Users/leejunghu/Desktop"
+
+    summary = []
+    for name, y in targets.items():
+        best_params, true_rmse, true_r2, y_pred = run_loocv_lsvr(
+            X, y, param_grid, loo, name, output_dir
+        )
+        # predictions CSV
+        df_pred = pd.DataFrame(X, columns=[f"x{i}" for i in range(1,8)])
+        df_pred["y_true"] = y
+        df_pred["y_pred"] = y_pred
+        df_pred.to_csv(f"{output_dir}/predictions_{name}.csv", index=False)
+
+        # summary 기록
+        rec = {"target": name, "true_RMSE": true_rmse, "true_R2": true_r2}
+        rec.update(best_params)
+        summary.append(rec)
+
+    # summary CSV
+    pd.DataFrame(summary).to_csv(f"{output_dir}/summary_results.csv", index=False)
